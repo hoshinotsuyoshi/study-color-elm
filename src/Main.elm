@@ -6,6 +6,9 @@ import Html exposing (Html, div, input, text, label, p, h1, h2, h3, span)
 import Html.Attributes exposing (style, type_, min, max, step, value)
 import Html.Events exposing (onInput)
 import Oklch exposing (oklchToSrgbRaw, oklchToSrgbMapped, oklchToP3Raw, oklchToP3Mapped)
+import ChromaticityDiagram
+import Svg
+import Svg.Attributes
 import Url
 import Url.Parser exposing (Parser, (<?>))
 import Url.Parser.Query as Query
@@ -227,6 +230,86 @@ computeResult l c h =
 
 
 
+-- CHROMATICITY DIAGRAM HELPERS
+
+
+computeXy : Float -> Float -> Float -> { x : Float, y : Float }
+computeXy l c h =
+    let
+        ( labL, labA, labB ) =
+            oklchToOklabLocal l c h
+
+        ( xyzX, xyzY, xyzZ ) =
+            oklabToXyzLocal labL labA labB
+
+        ( xyX, xyY ) =
+            xyzToXyLocal ( xyzX, xyzY, xyzZ )
+    in
+    { x = xyX, y = xyY }
+
+
+oklchToOklabLocal : Float -> Float -> Float -> ( Float, Float, Float )
+oklchToOklabLocal l c hDeg =
+    let
+        hRad =
+            degrees hDeg
+
+        a =
+            c * cos hRad
+
+        b =
+            c * sin hRad
+    in
+    ( l, a, b )
+
+
+oklabToXyzLocal : Float -> Float -> Float -> ( Float, Float, Float )
+oklabToXyzLocal l a b =
+    let
+        l_ =
+            l + 0.3963377774 * a + 0.2158037573 * b
+
+        m_ =
+            l - 0.1055613458 * a - 0.0638541728 * b
+
+        s_ =
+            l - 0.0894841775 * a - 1.291485548 * b
+
+        lLms =
+            l_ * l_ * l_
+
+        mLms =
+            m_ * m_ * m_
+
+        sLms =
+            s_ * s_ * s_
+
+        x =
+            1.2270138511 * lLms - 0.5577999807 * mLms + 0.2812561489 * sLms
+
+        y =
+            -0.0405801784 * lLms + 1.1122568696 * mLms - 0.0716766787 * sLms
+
+        z =
+            -0.0763812845 * lLms - 0.4214819784 * mLms + 1.5861632204 * sLms
+    in
+    ( x, y, z )
+
+
+xyzToXyLocal : ( Float, Float, Float ) -> ( Float, Float )
+xyzToXyLocal ( x, y, z ) =
+    let
+        sum =
+            x + y + z
+    in
+    if sum < 1.0e-10 then
+        ( 0, 0 )
+
+    else
+        ( x / sum, y / sum )
+
+
+
 -- SUBSCRIPTIONS
 
 
@@ -325,9 +408,31 @@ view model =
                     , text (String.fromFloat (roundTo 4 model.result.mappedCP3))
                     ]
                 ]
+            , div [ style "margin" "2rem 0" ]
+                [ h2 [] [ text "Chromaticity Diagram (xy plot)" ]
+                , viewChromaticity model
+                ]
             ]
         ]
     }
+
+
+viewChromaticity : Model -> Html Msg
+viewChromaticity model =
+    let
+        xyPoint =
+            computeXy model.l model.c model.h
+    in
+    div [ style "max-width" "800px", style "margin" "0 auto" ]
+        [ Svg.svg
+            [ Svg.Attributes.viewBox "0 0 1 1"
+            , Svg.Attributes.width "100%"
+            , Svg.Attributes.style "display: block;"
+            ]
+            [ ChromaticityDiagram.viewContent
+            , ChromaticityDiagram.plotPoint xyPoint
+            ]
+        ]
 
 
 viewSlider : String -> Float -> Float -> Float -> Float -> (String -> Msg) -> Html Msg
