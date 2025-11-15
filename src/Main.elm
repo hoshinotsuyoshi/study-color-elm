@@ -1,3 +1,17 @@
+{-
+OKLCH Color Converter
+
+An interactive color space converter with visual demonstrations:
+- OKLCH to sRGB/Display P3 conversion
+- Gamut mapping for out-of-gamut colors
+- CIE 1931 xy chromaticity diagram
+- URL-based color sharing
+
+Based on Oklab color space by Björn Ottosson
+https://bottosson.github.io/posts/oklab/
+-}
+
+
 module Main exposing (main)
 
 import Browser

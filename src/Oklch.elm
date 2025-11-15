@@ -1,3 +1,16 @@
+{-
+OKLCH/Oklab Color Space Conversion
+
+Color conversion math based on the Oklab color space by Björn Ottosson
+https://bottosson.github.io/posts/oklab/
+
+This module implements:
+- OKLCH ↔ Oklab conversion (cylindrical ↔ rectangular coordinates)
+- Oklab → XYZ → sRGB/Display P3 conversion pipeline
+- Binary search gamut mapping for out-of-gamut colors
+-}
+
+
 module Oklch exposing
     ( oklchToSrgbRaw
     , oklchToSrgbMapped
@@ -101,6 +114,9 @@ xyzToLinearSrgb x y z =
 
 
 -- XYZ D65 to linear Display P3
+-- Display-P3 → XYZ conversion matrix
+-- Taken from W3C CSS Color Module Level 4 (Predefined color spaces)
+-- https://www.w3.org/TR/css-color-4/#predefined
 
 
 xyzToLinearP3 : Float -> Float -> Float -> ( Float, Float, Float )

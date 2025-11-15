@@ -1,3 +1,19 @@
+{-
+CIE 1931 xy Chromaticity Diagram
+
+This module renders the CIE 1931 xy chromaticity diagram including:
+- Spectral locus (wavelengths 380-780nm)
+- sRGB and Display P3 gamut triangles
+- Background color field visualization
+- Real-time color plotting
+
+Data source:
+• CIE 1931 2° Standard Observer color matching functions
+  Data from CVRL (Colour & Vision Research Laboratory)
+  http://cvrl.org/
+-}
+
+
 module ChromaticityDiagram exposing (view, viewContent, plotPoint)
 
 import Svg exposing (Svg, svg, rect, polyline, circle, polygon, path)
