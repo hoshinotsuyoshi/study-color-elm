@@ -341,13 +341,8 @@ view model =
                 , viewOklchColorBox model.l model.c model.h
                 ]
             , div [ style "margin" "2rem 0" ]
-                [ h2 [] [ text "Results (Elm computed)" ]
-                , h3 [] [ text "sRGB" ]
-                , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw Nothing
-                , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped (Just (rgbToHexString model.result.srgbMapped))
-                , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
-                , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
-                , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
+                [ h2 [] [ text "Chromaticity Diagram (xy plot)" ]
+                , viewChromaticity model
                 ]
             , div
                 [ style "margin" "2rem 0"
@@ -409,8 +404,13 @@ view model =
                     ]
                 ]
             , div [ style "margin" "2rem 0" ]
-                [ h2 [] [ text "Chromaticity Diagram (xy plot)" ]
-                , viewChromaticity model
+                [ h2 [] [ text "Results (Elm computed)" ]
+                , h3 [] [ text "sRGB" ]
+                , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw Nothing
+                , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped (Just (rgbToHexString model.result.srgbMapped))
+                , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
+                , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
+                , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
                 ]
             ]
         ]
