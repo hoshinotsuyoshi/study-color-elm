@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "elm-live src/Main.elm --open --port=3000",
-    "build": "elm make src/Main.elm --optimize --output=main.js"
+    "start": "elm-live src/Main.elm --open --port=3000 -- --output=elm.js",
+    "build": "elm make src/Main.elm --optimize --output=elm.js"
   },
   "devDependencies": {
     "elm": "^0.19.1-5",
