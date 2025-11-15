@@ -12,13 +12,13 @@ https://bottosson.github.io/posts/oklab/
 -}
 
 
-module Main exposing (main)
+port module Main exposing (main)
 
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, div, input, text, label, p, h1, h2, h3, span)
-import Html.Attributes exposing (style, type_, min, max, step, value)
-import Html.Events exposing (onInput)
+import Html exposing (Html, div, input, text, label, p, h1, h2, h3, span, button, a, footer)
+import Html.Attributes exposing (style, type_, min, max, step, value, href, target, rel)
+import Html.Events exposing (onInput, onClick)
 import Oklch exposing (oklchToSrgbRaw, oklchToSrgbMapped, oklchToP3Raw, oklchToP3Mapped)
 import ChromaticityDiagram
 import Svg
@@ -26,9 +26,16 @@ import Svg.Attributes
 import Url
 import Url.Parser exposing (Parser, (<?>))
 import Url.Parser.Query as Query
+import Process
+import Task
 
 
 -- MODEL
+
+
+type Tab
+    = ChromaticityTab
+    | ColorsTab
 
 
 type alias Model =
@@ -38,6 +45,8 @@ type alias Model =
     , c : Float
     , h : Float
     , result : ResultColor
+    , activeTab : Tab
+    , copiedText : Maybe String
     }
 
 
@@ -74,6 +83,8 @@ init _ url key =
       , c = initialC
       , h = initialH
       , result = computeResult initialL initialC initialH
+      , activeTab = ColorsTab
+      , copiedText = Nothing
       }
     , Cmd.none
     )
@@ -122,6 +133,9 @@ type Msg
     | ChangeL String
     | ChangeC String
     | ChangeH String
+    | SwitchTab Tab
+    | CopyToClipboard String
+    | ClearCopied
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -203,6 +217,31 @@ update msg model =
               }
             , Nav.pushUrl model.key newUrl
             )
+
+        SwitchTab tab ->
+            ( { model | activeTab = tab }
+            , Cmd.none
+            )
+
+        CopyToClipboard text ->
+            ( { model | copiedText = Just text }
+            , Cmd.batch
+                [ copyToClipboard text
+                , Task.perform (always ClearCopied) (Process.sleep 2000)
+                ]
+            )
+
+        ClearCopied ->
+            ( { model | copiedText = Nothing }
+            , Cmd.none
+            )
+
+
+
+-- PORTS
+
+
+port copyToClipboard : String -> Cmd msg
 
 
 buildUrl : Url.Url -> Float -> Float -> Float -> String
@@ -348,87 +387,174 @@ view model =
             ]
             [ h1 [] [ text "OKLCH → sRGB + P3 + Gamut Mapping Demo" ]
             , div [ style "margin" "2rem 0" ]
-                [ h2 [] [ text "Input" ]
-                , viewSlider "L (Lightness)" model.l 0 1 0.01 ChangeL
+                [ viewSlider "L (Lightness)" model.l 0 1 0.01 ChangeL
                 , viewSlider "C (Chroma)" model.c 0 0.4 0.01 ChangeC
                 , viewSlider "h (Hue)" model.h 0 360 1 ChangeH
-                , viewOklchColorBox model.l model.c model.h
                 ]
             , div [ style "margin" "2rem 0" ]
-                [ h2 [] [ text "Chromaticity Diagram (xy plot)" ]
-                , viewChromaticity model
+                [ viewOklchColorBox model.l model.c model.h
                 ]
-            , div
-                [ style "margin" "2rem 0"
-                , style "padding" "1rem"
-                , style "background-color" "#f5f5f5"
-                , style "border-radius" "8px"
-                ]
-                [ p []
-                    [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (sRGB): " ]
-                    , span
-                        [ style "color"
-                            (if model.result.inGamutSrgb then
-                                "green"
-
-                             else
-                                "red"
-                            )
-                        ]
-                        [ text
-                            (if model.result.inGamutSrgb then
-                                "No"
-
-                             else
-                                "Yes"
-                            )
-                        ]
-                    ]
-                , p []
-                    [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (P3): " ]
-                    , span
-                        [ style "color"
-                            (if model.result.inGamutP3 then
-                                "green"
-
-                             else
-                                "red"
-                            )
-                        ]
-                        [ text
-                            (if model.result.inGamutP3 then
-                                "No"
-
-                             else
-                                "Yes"
-                            )
-                        ]
-                    ]
-                , p []
-                    [ span [ style "font-weight" "bold" ] [ text "Original C: " ]
-                    , text (String.fromFloat (roundTo 4 model.c))
-                    ]
-                , p []
-                    [ span [ style "font-weight" "bold" ] [ text "Mapped C (sRGB): " ]
-                    , text (String.fromFloat (roundTo 4 model.result.mappedCSrgb))
-                    ]
-                , p []
-                    [ span [ style "font-weight" "bold" ] [ text "Mapped C (P3): " ]
-                    , text (String.fromFloat (roundTo 4 model.result.mappedCP3))
-                    ]
-                ]
-            , div [ style "margin" "2rem 0" ]
-                [ h2 [] [ text "Results (Elm computed)" ]
-                , h3 [] [ text "sRGB" ]
-                , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw Nothing
-                , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped (Just (rgbToHexString model.result.srgbMapped))
-                , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
-                , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
-                , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
-                ]
+            , viewTabs model
+            , viewFooter
             ]
         ]
     }
+
+
+viewTabs : Model -> Html Msg
+viewTabs model =
+    div [ style "margin" "2rem 0" ]
+        [ -- Tab buttons
+          div [ style "display" "flex", style "gap" "0", style "margin-bottom" "1rem" ]
+            [ button
+                [ onClick (SwitchTab ColorsTab)
+                , style "flex" "1"
+                , style "padding" "0.5rem 1rem"
+                , style "border" "1px solid #ccc"
+                , style "border-radius" "4px 0 0 4px"
+                , style "background-color"
+                    (if model.activeTab == ColorsTab then
+                        "#5a7fa0"
+                     else
+                        "#fff"
+                    )
+                , style "color"
+                    (if model.activeTab == ColorsTab then
+                        "#fff"
+                     else
+                        "#333"
+                    )
+                , style "cursor" "pointer"
+                ]
+                [ text "sRGB/P3" ]
+            , button
+                [ onClick (SwitchTab ChromaticityTab)
+                , style "flex" "1"
+                , style "padding" "0.5rem 1rem"
+                , style "border" "1px solid #ccc"
+                , style "border-radius" "0 4px 4px 0"
+                , style "background-color"
+                    (if model.activeTab == ChromaticityTab then
+                        "#5a7fa0"
+                     else
+                        "#fff"
+                    )
+                , style "color"
+                    (if model.activeTab == ChromaticityTab then
+                        "#fff"
+                     else
+                        "#333"
+                    )
+                , style "cursor" "pointer"
+                ]
+                [ text "Diagram (xy plot)" ]
+            ]
+        , -- Tab content
+          case model.activeTab of
+            ChromaticityTab ->
+                div []
+                    [ viewChromaticity model
+                    , div
+                        [ style "margin" "2rem 0"
+                        , style "padding" "1rem"
+                        , style "background-color" "#f5f5f5"
+                        , style "border-radius" "8px"
+                        ]
+                        [ p []
+                            [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (sRGB): " ]
+                            , span
+                                [ style "color"
+                                    (if model.result.inGamutSrgb then
+                                        "green"
+                                     else
+                                        "red"
+                                    )
+                                ]
+                                [ text
+                                    (if model.result.inGamutSrgb then
+                                        "No"
+                                     else
+                                        "Yes"
+                                    )
+                                ]
+                            ]
+                        , p []
+                            [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (P3): " ]
+                            , span
+                                [ style "color"
+                                    (if model.result.inGamutP3 then
+                                        "green"
+                                     else
+                                        "red"
+                                    )
+                                ]
+                                [ text
+                                    (if model.result.inGamutP3 then
+                                        "No"
+                                     else
+                                        "Yes"
+                                    )
+                                ]
+                            ]
+                        , p []
+                            [ span [ style "font-weight" "bold" ] [ text "Original C: " ]
+                            , text (String.fromFloat (roundTo 4 model.c))
+                            ]
+                        , p []
+                            [ span [ style "font-weight" "bold" ] [ text "Mapped C (sRGB): " ]
+                            , text (String.fromFloat (roundTo 4 model.result.mappedCSrgb))
+                            ]
+                        , p []
+                            [ span [ style "font-weight" "bold" ] [ text "Mapped C (P3): " ]
+                            , text (String.fromFloat (roundTo 4 model.result.mappedCP3))
+                            ]
+                        ]
+                    ]
+
+            ColorsTab ->
+                div []
+                    [ h3 [] [ text "sRGB" ]
+                    , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw Nothing model.copiedText
+                    , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped (Just (rgbToHexString model.result.srgbMapped)) model.copiedText
+                    , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
+                    , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
+                    , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
+                    ]
+        ]
+
+
+viewFooter : Html Msg
+viewFooter =
+    footer
+        [ style "margin-top" "3rem"
+        , style "padding-top" "2rem"
+        , style "border-top" "1px solid #ddd"
+        , style "text-align" "center"
+        ]
+        [ a
+            [ href "https://github.com/hoshinotsuyoshi/study-color-elm"
+            , target "_blank"
+            , rel "noopener noreferrer"
+            , style "display" "inline-flex"
+            , style "align-items" "center"
+            , style "gap" "0.5rem"
+            , style "color" "#333"
+            , style "text-decoration" "none"
+            ]
+            [ Svg.svg
+                [ Svg.Attributes.width "24"
+                , Svg.Attributes.height "24"
+                , Svg.Attributes.viewBox "0 0 16 16"
+                , Svg.Attributes.fill "currentColor"
+                ]
+                [ Svg.path
+                    [ Svg.Attributes.d "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+                    ]
+                    []
+                ]
+            , text "GitHub"
+            ]
+        ]
 
 
 viewChromaticity : Model -> Html Msg
@@ -471,8 +597,8 @@ viewSlider labelText currentValue minVal maxVal stepVal msg =
         ]
 
 
-viewColorBox : String -> ( Float, Float, Float ) -> Maybe String -> Html Msg
-viewColorBox title ( r, g, b ) maybeHex =
+viewColorBox : String -> ( Float, Float, Float ) -> Maybe String -> Maybe String -> Html Msg
+viewColorBox title ( r, g, b ) maybeHex copiedText =
     div [ style "margin" "1rem 0" ]
         [ p [ style "font-weight" "bold" ] [ text title ]
         , div
@@ -491,12 +617,36 @@ viewColorBox title ( r, g, b ) maybeHex =
             [ text ("rgb(" ++ String.fromFloat (roundTo 3 r) ++ ", " ++ String.fromFloat (roundTo 3 g) ++ ", " ++ String.fromFloat (roundTo 3 b) ++ ")") ]
         , case maybeHex of
             Just hexString ->
-                p
-                    [ style "font-size" "0.9rem"
-                    , style "color" "#666"
+                div
+                    [ style "display" "flex"
+                    , style "align-items" "center"
+                    , style "gap" "0.5rem"
                     , style "margin-top" "0.25rem"
                     ]
-                    [ text ("hex: " ++ hexString) ]
+                    [ p
+                        [ style "font-size" "0.9rem"
+                        , style "color" "#666"
+                        , style "margin" "0"
+                        ]
+                        [ text ("hex: " ++ hexString) ]
+                    , button
+                        [ onClick (CopyToClipboard hexString)
+                        , style "padding" "0.1rem 0.4rem"
+                        , style "font-size" "0.75rem"
+                        , style "border" "1px solid #ccc"
+                        , style "border-radius" "4px"
+                        , style "background-color" "#f5f5f5"
+                        , style "cursor" "pointer"
+                        , style "line-height" "1.2"
+                        ]
+                        [ text
+                            (if copiedText == Just hexString then
+                                "Copied!"
+                             else
+                                "Copy"
+                            )
+                        ]
+                    ]
 
             Nothing ->
                 text ""
@@ -534,7 +684,7 @@ viewOklchColorBox l c h =
         [ p [ style "font-weight" "bold" ] [ text "CSS oklch() (Browser Native)" ]
         , div
             [ style "width" "100%"
-            , style "height" "100px"
+            , style "height" "32px"
             , style "background-color" oklchString
             , style "border" "2px solid #333"
             , style "border-radius" "8px"
