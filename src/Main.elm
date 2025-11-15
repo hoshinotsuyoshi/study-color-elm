@@ -127,12 +127,14 @@ view model =
         ]
         [ h1 [] [ text "OKLCH → sRGB + Gamut Mapping Demo" ]
         , div [ style "margin" "2rem 0" ]
-            [ viewSlider "L (Lightness)" model.l 0 1 0.01 ChangeL
+            [ h2 [] [ text "Input" ]
+            , viewSlider "L (Lightness)" model.l 0 1 0.01 ChangeL
             , viewSlider "C (Chroma)" model.c 0 0.4 0.01 ChangeC
             , viewSlider "h (Hue)" model.h 0 360 1 ChangeH
+            , viewOklchColorBox model.l model.c model.h
             ]
         , div [ style "margin" "2rem 0" ]
-            [ h2 [] [ text "Results" ]
+            [ h2 [] [ text "Results (Elm computed)" ]
             , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw
             , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped
             ]
@@ -214,6 +216,31 @@ viewColorBox title ( r, g, b ) =
             , style "margin-top" "0.5rem"
             ]
             [ text ("rgb(" ++ String.fromFloat (roundTo 3 r) ++ ", " ++ String.fromFloat (roundTo 3 g) ++ ", " ++ String.fromFloat (roundTo 3 b) ++ ")") ]
+        ]
+
+
+viewOklchColorBox : Float -> Float -> Float -> Html Msg
+viewOklchColorBox l c h =
+    let
+        oklchString =
+            "oklch(" ++ String.fromFloat (roundTo 3 l) ++ " " ++ String.fromFloat (roundTo 3 c) ++ " " ++ String.fromFloat (roundTo 1 h) ++ ")"
+    in
+    div [ style "margin" "1.5rem 0" ]
+        [ p [ style "font-weight" "bold" ] [ text "CSS oklch() (Browser Native)" ]
+        , div
+            [ style "width" "100%"
+            , style "height" "100px"
+            , style "background-color" oklchString
+            , style "border" "2px solid #333"
+            , style "border-radius" "8px"
+            ]
+            []
+        , p
+            [ style "font-size" "0.9rem"
+            , style "color" "#666"
+            , style "margin-top" "0.5rem"
+            ]
+            [ text oklchString ]
         ]
 
 
