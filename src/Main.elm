@@ -150,8 +150,8 @@ view model =
         , div [ style "margin" "2rem 0" ]
             [ h2 [] [ text "Results (Elm computed)" ]
             , h3 [] [ text "sRGB" ]
-            , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw
-            , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped
+            , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw Nothing
+            , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped (Just (rgbToHexString model.result.srgbMapped))
             , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
             , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
             , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
@@ -240,8 +240,8 @@ viewSlider labelText currentValue minVal maxVal stepVal msg =
         ]
 
 
-viewColorBox : String -> ( Float, Float, Float ) -> Html Msg
-viewColorBox title ( r, g, b ) =
+viewColorBox : String -> ( Float, Float, Float ) -> Maybe String -> Html Msg
+viewColorBox title ( r, g, b ) maybeHex =
     div [ style "margin" "1rem 0" ]
         [ p [ style "font-weight" "bold" ] [ text title ]
         , div
@@ -258,6 +258,17 @@ viewColorBox title ( r, g, b ) =
             , style "margin-top" "0.5rem"
             ]
             [ text ("rgb(" ++ String.fromFloat (roundTo 3 r) ++ ", " ++ String.fromFloat (roundTo 3 g) ++ ", " ++ String.fromFloat (roundTo 3 b) ++ ")") ]
+        , case maybeHex of
+            Just hexString ->
+                p
+                    [ style "font-size" "0.9rem"
+                    , style "color" "#666"
+                    , style "margin-top" "0.25rem"
+                    ]
+                    [ text ("hex: " ++ hexString) ]
+
+            Nothing ->
+                text ""
         ]
 
 
@@ -325,6 +336,82 @@ rgbToString r g b =
 p3ToString : Float -> Float -> Float -> String
 p3ToString r g b =
     "color(display-p3 " ++ String.fromFloat r ++ " " ++ String.fromFloat g ++ " " ++ String.fromFloat b ++ ")"
+
+
+rgbToHexString : ( Float, Float, Float ) -> String
+rgbToHexString ( r, g, b ) =
+    let
+        toChannelHex value =
+            let
+                v255 =
+                    clamp 0 255 (round (value * 255))
+            in
+            toHex2 v255
+
+        toHex2 n =
+            let
+                high =
+                    n // 16
+
+                low =
+                    modBy 16 n
+            in
+            hexDigit high ++ hexDigit low
+
+        hexDigit n =
+            case n of
+                0 ->
+                    "0"
+
+                1 ->
+                    "1"
+
+                2 ->
+                    "2"
+
+                3 ->
+                    "3"
+
+                4 ->
+                    "4"
+
+                5 ->
+                    "5"
+
+                6 ->
+                    "6"
+
+                7 ->
+                    "7"
+
+                8 ->
+                    "8"
+
+                9 ->
+                    "9"
+
+                10 ->
+                    "A"
+
+                11 ->
+                    "B"
+
+                12 ->
+                    "C"
+
+                13 ->
+                    "D"
+
+                14 ->
+                    "E"
+
+                15 ->
+                    "F"
+
+                _ ->
+                    "0"
+    in
+    "#" ++ toChannelHex r ++ toChannelHex g ++ toChannelHex b
 
 
 roundTo : Int -> Float -> Float
