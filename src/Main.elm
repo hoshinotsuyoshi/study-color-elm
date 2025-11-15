@@ -1,17 +1,23 @@
 module Main exposing (main)
 
 import Browser
+import Browser.Navigation as Nav
 import Html exposing (Html, div, input, text, label, p, h1, h2, h3, span)
 import Html.Attributes exposing (style, type_, min, max, step, value)
 import Html.Events exposing (onInput)
 import Oklch exposing (oklchToSrgbRaw, oklchToSrgbMapped, oklchToP3Raw, oklchToP3Mapped)
+import Url
+import Url.Parser exposing (Parser, (<?>))
+import Url.Parser.Query as Query
 
 
 -- MODEL
 
 
 type alias Model =
-    { l : Float
+    { key : Nav.Key
+    , url : Url.Url
+    , l : Float
     , c : Float
     , h : Float
     , result : ResultColor
@@ -30,19 +36,24 @@ type alias ResultColor =
     }
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
+init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
+init _ url key =
     let
+        params =
+            parseUrlParams url
+
         initialL =
-            0.7
+            Maybe.withDefault 0.7 params.l
 
         initialC =
-            0.15
+            Maybe.withDefault 0.15 params.c
 
         initialH =
-            150
+            Maybe.withDefault 150 params.h
     in
-    ( { l = initialL
+    ( { key = key
+      , url = url
+      , l = initialL
       , c = initialC
       , h = initialH
       , result = computeResult initialL initialC initialH
@@ -51,12 +62,47 @@ init _ =
     )
 
 
+type alias UrlParams =
+    { l : Maybe Float
+    , c : Maybe Float
+    , h : Maybe Float
+    }
+
+
+parseUrlParams : Url.Url -> UrlParams
+parseUrlParams url =
+    let
+        query =
+            url.query |> Maybe.withDefault ""
+
+        parser =
+            Query.map3 UrlParams
+                (Query.custom "l" parseFloatParam)
+                (Query.custom "c" parseFloatParam)
+                (Query.custom "h" parseFloatParam)
+
+        parseFloatParam : List String -> Maybe Float
+        parseFloatParam values =
+            values
+                |> List.head
+                |> Maybe.andThen String.toFloat
+    in
+    case Url.Parser.parse (Url.Parser.top <?> parser) { url | path = "/" } of
+        Just params ->
+            params
+
+        Nothing ->
+            { l = Nothing, c = Nothing, h = Nothing }
+
+
 
 -- UPDATE
 
 
 type Msg
-    = ChangeL String
+    = UrlRequested Browser.UrlRequest
+    | UrlChanged Url.Url
+    | ChangeL String
     | ChangeC String
     | ChangeH String
 
@@ -64,41 +110,94 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        UrlRequested urlRequest ->
+            case urlRequest of
+                Browser.Internal url ->
+                    ( model, Nav.pushUrl model.key (Url.toString url) )
+
+                Browser.External href ->
+                    ( model, Nav.load href )
+
+        UrlChanged url ->
+            let
+                params =
+                    parseUrlParams url
+
+                newL =
+                    Maybe.withDefault model.l params.l
+
+                newC =
+                    Maybe.withDefault model.c params.c
+
+                newH =
+                    Maybe.withDefault model.h params.h
+            in
+            ( { model
+                | url = url
+                , l = newL
+                , c = newC
+                , h = newH
+                , result = computeResult newL newC newH
+              }
+            , Cmd.none
+            )
+
         ChangeL str ->
             let
                 newL =
                     String.toFloat str |> Maybe.withDefault model.l
+
+                newUrl =
+                    buildUrl model.url newL model.c model.h
             in
             ( { model
                 | l = newL
                 , result = computeResult newL model.c model.h
               }
-            , Cmd.none
+            , Nav.pushUrl model.key newUrl
             )
 
         ChangeC str ->
             let
                 newC =
                     String.toFloat str |> Maybe.withDefault model.c
+
+                newUrl =
+                    buildUrl model.url model.l newC model.h
             in
             ( { model
                 | c = newC
                 , result = computeResult model.l newC model.h
               }
-            , Cmd.none
+            , Nav.pushUrl model.key newUrl
             )
 
         ChangeH str ->
             let
                 newH =
                     String.toFloat str |> Maybe.withDefault model.h
+
+                newUrl =
+                    buildUrl model.url model.l model.c newH
             in
             ( { model
                 | h = newH
                 , result = computeResult model.l model.c newH
               }
-            , Cmd.none
+            , Nav.pushUrl model.key newUrl
             )
+
+
+buildUrl : Url.Url -> Float -> Float -> Float -> String
+buildUrl url l c h =
+    let
+        base =
+            Url.toString { url | query = Nothing, fragment = Nothing }
+
+        query =
+            "?l=" ++ String.fromFloat l ++ "&c=" ++ String.fromFloat c ++ "&h=" ++ String.fromFloat h
+    in
+    base ++ query
 
 
 computeResult : Float -> Float -> Float -> ResultColor
@@ -128,94 +227,107 @@ computeResult l c h =
 
 
 
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
+
+
+
 -- VIEW
 
 
-view : Model -> Html Msg
+view : Model -> Browser.Document Msg
 view model =
-    div
-        [ style "font-family" "system-ui, -apple-system, sans-serif"
-        , style "max-width" "800px"
-        , style "margin" "2rem auto"
-        , style "padding" "2rem"
+    { title = "OKLCH Color Demo"
+    , body =
+        [ div
+            [ style "font-family" "system-ui, -apple-system, sans-serif"
+            , style "max-width" "800px"
+            , style "margin" "2rem auto"
+            , style "padding" "2rem"
+            ]
+            [ h1 [] [ text "OKLCH → sRGB + P3 + Gamut Mapping Demo" ]
+            , div [ style "margin" "2rem 0" ]
+                [ h2 [] [ text "Input" ]
+                , viewSlider "L (Lightness)" model.l 0 1 0.01 ChangeL
+                , viewSlider "C (Chroma)" model.c 0 0.4 0.01 ChangeC
+                , viewSlider "h (Hue)" model.h 0 360 1 ChangeH
+                , viewOklchColorBox model.l model.c model.h
+                ]
+            , div [ style "margin" "2rem 0" ]
+                [ h2 [] [ text "Results (Elm computed)" ]
+                , h3 [] [ text "sRGB" ]
+                , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw Nothing
+                , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped (Just (rgbToHexString model.result.srgbMapped))
+                , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
+                , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
+                , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
+                ]
+            , div
+                [ style "margin" "2rem 0"
+                , style "padding" "1rem"
+                , style "background-color" "#f5f5f5"
+                , style "border-radius" "8px"
+                ]
+                [ p []
+                    [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (sRGB): " ]
+                    , span
+                        [ style "color"
+                            (if model.result.inGamutSrgb then
+                                "green"
+
+                             else
+                                "red"
+                            )
+                        ]
+                        [ text
+                            (if model.result.inGamutSrgb then
+                                "No"
+
+                             else
+                                "Yes"
+                            )
+                        ]
+                    ]
+                , p []
+                    [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (P3): " ]
+                    , span
+                        [ style "color"
+                            (if model.result.inGamutP3 then
+                                "green"
+
+                             else
+                                "red"
+                            )
+                        ]
+                        [ text
+                            (if model.result.inGamutP3 then
+                                "No"
+
+                             else
+                                "Yes"
+                            )
+                        ]
+                    ]
+                , p []
+                    [ span [ style "font-weight" "bold" ] [ text "Original C: " ]
+                    , text (String.fromFloat (roundTo 4 model.c))
+                    ]
+                , p []
+                    [ span [ style "font-weight" "bold" ] [ text "Mapped C (sRGB): " ]
+                    , text (String.fromFloat (roundTo 4 model.result.mappedCSrgb))
+                    ]
+                , p []
+                    [ span [ style "font-weight" "bold" ] [ text "Mapped C (P3): " ]
+                    , text (String.fromFloat (roundTo 4 model.result.mappedCP3))
+                    ]
+                ]
+            ]
         ]
-        [ h1 [] [ text "OKLCH → sRGB + P3 + Gamut Mapping Demo" ]
-        , div [ style "margin" "2rem 0" ]
-            [ h2 [] [ text "Input" ]
-            , viewSlider "L (Lightness)" model.l 0 1 0.01 ChangeL
-            , viewSlider "C (Chroma)" model.c 0 0.4 0.01 ChangeC
-            , viewSlider "h (Hue)" model.h 0 360 1 ChangeH
-            , viewOklchColorBox model.l model.c model.h
-            ]
-        , div [ style "margin" "2rem 0" ]
-            [ h2 [] [ text "Results (Elm computed)" ]
-            , h3 [] [ text "sRGB" ]
-            , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw Nothing
-            , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped (Just (rgbToHexString model.result.srgbMapped))
-            , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
-            , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
-            , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
-            ]
-        , div
-            [ style "margin" "2rem 0"
-            , style "padding" "1rem"
-            , style "background-color" "#f5f5f5"
-            , style "border-radius" "8px"
-            ]
-            [ p []
-                [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (sRGB): " ]
-                , span
-                    [ style "color"
-                        (if model.result.inGamutSrgb then
-                            "green"
-
-                         else
-                            "red"
-                        )
-                    ]
-                    [ text
-                        (if model.result.inGamutSrgb then
-                            "No"
-
-                         else
-                            "Yes"
-                        )
-                    ]
-                ]
-            , p []
-                [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (P3): " ]
-                , span
-                    [ style "color"
-                        (if model.result.inGamutP3 then
-                            "green"
-
-                         else
-                            "red"
-                        )
-                    ]
-                    [ text
-                        (if model.result.inGamutP3 then
-                            "No"
-
-                         else
-                            "Yes"
-                        )
-                    ]
-                ]
-            , p []
-                [ span [ style "font-weight" "bold" ] [ text "Original C: " ]
-                , text (String.fromFloat (roundTo 4 model.c))
-                ]
-            , p []
-                [ span [ style "font-weight" "bold" ] [ text "Mapped C (sRGB): " ]
-                , text (String.fromFloat (roundTo 4 model.result.mappedCSrgb))
-                ]
-            , p []
-                [ span [ style "font-weight" "bold" ] [ text "Mapped C (P3): " ]
-                , text (String.fromFloat (roundTo 4 model.result.mappedCP3))
-                ]
-            ]
-        ]
+    }
 
 
 viewSlider : String -> Float -> Float -> Float -> Float -> (String -> Msg) -> Html Msg
@@ -429,9 +541,11 @@ roundTo decimals val =
 
 main : Program () Model Msg
 main =
-    Browser.element
+    Browser.application
         { init = init
-        , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , update = update
+        , subscriptions = subscriptions
+        , onUrlRequest = UrlRequested
+        , onUrlChange = UrlChanged
         }
