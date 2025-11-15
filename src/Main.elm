@@ -1,10 +1,10 @@
 module Main exposing (main)
 
 import Browser
-import Html exposing (Html, div, input, text, label, p, h1, h2, span)
+import Html exposing (Html, div, input, text, label, p, h1, h2, h3, span)
 import Html.Attributes exposing (style, type_, min, max, step, value)
 import Html.Events exposing (onInput)
-import Oklch exposing (oklchToSrgbRaw, oklchToSrgbMapped)
+import Oklch exposing (oklchToSrgbRaw, oklchToSrgbMapped, oklchToP3Raw, oklchToP3Mapped)
 
 
 -- MODEL
@@ -21,8 +21,12 @@ type alias Model =
 type alias ResultColor =
     { srgbRaw : ( Float, Float, Float )
     , srgbMapped : ( Float, Float, Float )
-    , mappedC : Float
-    , inGamut : Bool
+    , p3Raw : ( Float, Float, Float )
+    , p3Mapped : ( Float, Float, Float )
+    , mappedCSrgb : Float
+    , mappedCP3 : Float
+    , inGamutSrgb : Bool
+    , inGamutP3 : Bool
     }
 
 
@@ -100,16 +104,26 @@ update msg model =
 computeResult : Float -> Float -> Float -> ResultColor
 computeResult l c h =
     let
-        raw =
+        srgbRaw =
             oklchToSrgbRaw l c h
 
-        mapped =
+        srgbMapped =
             oklchToSrgbMapped l c h
+
+        p3Raw =
+            oklchToP3Raw l c h
+
+        p3Mapped =
+            oklchToP3Mapped l c h
     in
-    { srgbRaw = raw
-    , srgbMapped = ( mapped.r, mapped.g, mapped.b )
-    , mappedC = mapped.mappedC
-    , inGamut = mapped.inGamut
+    { srgbRaw = srgbRaw
+    , srgbMapped = ( srgbMapped.r, srgbMapped.g, srgbMapped.b )
+    , p3Raw = p3Raw
+    , p3Mapped = ( p3Mapped.r, p3Mapped.g, p3Mapped.b )
+    , mappedCSrgb = srgbMapped.mappedC
+    , mappedCP3 = p3Mapped.mappedC
+    , inGamutSrgb = srgbMapped.inGamut
+    , inGamutP3 = p3Mapped.inGamut
     }
 
 
@@ -125,7 +139,7 @@ view model =
         , style "margin" "2rem auto"
         , style "padding" "2rem"
         ]
-        [ h1 [] [ text "OKLCH → sRGB + Gamut Mapping Demo" ]
+        [ h1 [] [ text "OKLCH → sRGB + P3 + Gamut Mapping Demo" ]
         , div [ style "margin" "2rem 0" ]
             [ h2 [] [ text "Input" ]
             , viewSlider "L (Lightness)" model.l 0 1 0.01 ChangeL
@@ -135,8 +149,12 @@ view model =
             ]
         , div [ style "margin" "2rem 0" ]
             [ h2 [] [ text "Results (Elm computed)" ]
+            , h3 [] [ text "sRGB" ]
             , viewColorBox "Raw sRGB (no gamut mapping)" model.result.srgbRaw
             , viewColorBox "Gamut Mapped sRGB" model.result.srgbMapped
+            , h3 [ style "margin-top" "2rem" ] [ text "Display P3" ]
+            , viewP3ColorBox "Raw display-p3 (no gamut mapping)" model.result.p3Raw
+            , viewP3ColorBox "Gamut Mapped display-p3" model.result.p3Mapped
             ]
         , div
             [ style "margin" "2rem 0"
@@ -145,10 +163,10 @@ view model =
             , style "border-radius" "8px"
             ]
             [ p []
-                [ span [ style "font-weight" "bold" ] [ text "Out of Gamut: " ]
+                [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (sRGB): " ]
                 , span
                     [ style "color"
-                        (if model.result.inGamut then
+                        (if model.result.inGamutSrgb then
                             "green"
 
                          else
@@ -156,7 +174,27 @@ view model =
                         )
                     ]
                     [ text
-                        (if model.result.inGamut then
+                        (if model.result.inGamutSrgb then
+                            "No"
+
+                         else
+                            "Yes"
+                        )
+                    ]
+                ]
+            , p []
+                [ span [ style "font-weight" "bold" ] [ text "Out of Gamut (P3): " ]
+                , span
+                    [ style "color"
+                        (if model.result.inGamutP3 then
+                            "green"
+
+                         else
+                            "red"
+                        )
+                    ]
+                    [ text
+                        (if model.result.inGamutP3 then
                             "No"
 
                          else
@@ -169,8 +207,12 @@ view model =
                 , text (String.fromFloat (roundTo 4 model.c))
                 ]
             , p []
-                [ span [ style "font-weight" "bold" ] [ text "Mapped C: " ]
-                , text (String.fromFloat (roundTo 4 model.result.mappedC))
+                [ span [ style "font-weight" "bold" ] [ text "Mapped C (sRGB): " ]
+                , text (String.fromFloat (roundTo 4 model.result.mappedCSrgb))
+                ]
+            , p []
+                [ span [ style "font-weight" "bold" ] [ text "Mapped C (P3): " ]
+                , text (String.fromFloat (roundTo 4 model.result.mappedCP3))
                 ]
             ]
         ]
@@ -219,6 +261,27 @@ viewColorBox title ( r, g, b ) =
         ]
 
 
+viewP3ColorBox : String -> ( Float, Float, Float ) -> Html Msg
+viewP3ColorBox title ( r, g, b ) =
+    div [ style "margin" "1rem 0" ]
+        [ p [ style "font-weight" "bold" ] [ text title ]
+        , div
+            [ style "width" "100%"
+            , style "height" "100px"
+            , style "background-color" (p3ToString r g b)
+            , style "border" "2px solid #333"
+            , style "border-radius" "8px"
+            ]
+            []
+        , p
+            [ style "font-size" "0.9rem"
+            , style "color" "#666"
+            , style "margin-top" "0.5rem"
+            ]
+            [ text ("color(display-p3 " ++ String.fromFloat (roundTo 3 r) ++ " " ++ String.fromFloat (roundTo 3 g) ++ " " ++ String.fromFloat (roundTo 3 b) ++ ")") ]
+        ]
+
+
 viewOklchColorBox : Float -> Float -> Float -> Html Msg
 viewOklchColorBox l c h =
     let
@@ -257,6 +320,11 @@ rgbToString r g b =
             clamp 0 255 (round (b * 255))
     in
     "rgb(" ++ String.fromInt r255 ++ ", " ++ String.fromInt g255 ++ ", " ++ String.fromInt b255 ++ ")"
+
+
+p3ToString : Float -> Float -> Float -> String
+p3ToString r g b =
+    "color(display-p3 " ++ String.fromFloat r ++ " " ++ String.fromFloat g ++ " " ++ String.fromFloat b ++ ")"
 
 
 roundTo : Int -> Float -> Float

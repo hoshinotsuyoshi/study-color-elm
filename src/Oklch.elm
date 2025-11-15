@@ -1,7 +1,10 @@
 module Oklch exposing
     ( oklchToSrgbRaw
     , oklchToSrgbMapped
+    , oklchToP3Raw
+    , oklchToP3Mapped
     , isInSrgbGamut
+    , isInP3Gamut
     , MappedResult
     )
 
@@ -97,6 +100,25 @@ xyzToLinearSrgb x y z =
 
 
 
+-- XYZ D65 to linear Display P3
+
+
+xyzToLinearP3 : Float -> Float -> Float -> ( Float, Float, Float )
+xyzToLinearP3 x y z =
+    let
+        r =
+            2.4934969119 * x - 0.9313836179 * y - 0.4027107844 * z
+
+        g =
+            -0.8294889696 * x + 1.7626640603 * y + 0.0236246858 * z
+
+        b =
+            0.0358458302 * x - 0.0761723893 * y + 0.9568845240 * z
+    in
+    ( r, g, b )
+
+
+
 -- Linear sRGB to gamma-corrected sRGB (single channel)
 
 
@@ -110,11 +132,34 @@ linearToSrgb linear =
 
 
 
+-- Linear P3 to gamma-corrected P3 (single channel)
+-- Uses same EOTF as sRGB
+
+
+linearToP3 : Float -> Float
+linearToP3 linear =
+    if linear <= 0.0031308 then
+        12.92 * linear
+
+    else
+        1.055 * (linear ^ (1 / 2.4)) - 0.055
+
+
+
 -- Check if sRGB values are in gamut [0, 1]
 
 
 isInSrgbGamut : ( Float, Float, Float ) -> Bool
 isInSrgbGamut ( r, g, b ) =
+    r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1
+
+
+
+-- Check if P3 values are in gamut [0, 1]
+
+
+isInP3Gamut : ( Float, Float, Float ) -> Bool
+isInP3Gamut ( r, g, b ) =
     r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1
 
 
@@ -155,6 +200,51 @@ gamutMapC l c h =
                         linearToSrgb linB
                 in
                 if isInSrgbGamut ( srgbR, srgbG, srgbB ) then
+                    iterate (n - 1) mid high
+
+                else
+                    iterate (n - 1) low mid
+    in
+    iterate 24 0 c
+
+
+
+-- Gamut mapping: Binary search to find maximum C that fits in P3 gamut
+-- Uses 24 iterations for precision (~6e-8)
+
+
+gamutMapCForP3 : Float -> Float -> Float -> Float
+gamutMapCForP3 l c h =
+    let
+        iterate : Int -> Float -> Float -> Float
+        iterate n low high =
+            if n <= 0 then
+                low
+
+            else
+                let
+                    mid =
+                        (low + high) / 2
+
+                    ( labL, labA, labB ) =
+                        oklchToOklab l mid h
+
+                    ( xyzX, xyzY, xyzZ ) =
+                        oklabToXyz labL labA labB
+
+                    ( linR, linG, linB ) =
+                        xyzToLinearP3 xyzX xyzY xyzZ
+
+                    p3R =
+                        linearToP3 linR
+
+                    p3G =
+                        linearToP3 linG
+
+                    p3B =
+                        linearToP3 linB
+                in
+                if isInP3Gamut ( p3R, p3G, p3B ) then
                     iterate (n - 1) mid high
 
                 else
@@ -220,6 +310,72 @@ oklchToSrgbMapped l c h =
 
             ( mappedR, mappedG, mappedB ) =
                 oklchToSrgbRaw l mappedC h
+        in
+        { r = mappedR
+        , g = mappedG
+        , b = mappedB
+        , mappedC = mappedC
+        , inGamut = False
+        }
+
+
+
+-- Convert OKLCH to Display P3 without gamut mapping (clipping)
+
+
+oklchToP3Raw : Float -> Float -> Float -> ( Float, Float, Float )
+oklchToP3Raw l c h =
+    let
+        ( labL, labA, labB ) =
+            oklchToOklab l c h
+
+        ( xyzX, xyzY, xyzZ ) =
+            oklabToXyz labL labA labB
+
+        ( linR, linG, linB ) =
+            xyzToLinearP3 xyzX xyzY xyzZ
+
+        r =
+            linearToP3 linR
+
+        g =
+            linearToP3 linG
+
+        b =
+            linearToP3 linB
+    in
+    ( r, g, b )
+
+
+
+-- Convert OKLCH to Display P3 with gamut mapping
+-- Returns: MappedResult record
+
+
+oklchToP3Mapped : Float -> Float -> Float -> MappedResult
+oklchToP3Mapped l c h =
+    let
+        ( rawR, rawG, rawB ) =
+            oklchToP3Raw l c h
+
+        inGamut =
+            isInP3Gamut ( rawR, rawG, rawB )
+    in
+    if inGamut then
+        { r = rawR
+        , g = rawG
+        , b = rawB
+        , mappedC = c
+        , inGamut = True
+        }
+
+    else
+        let
+            mappedC =
+                gamutMapCForP3 l c h
+
+            ( mappedR, mappedG, mappedB ) =
+                oklchToP3Raw l mappedC h
         in
         { r = mappedR
         , g = mappedG
